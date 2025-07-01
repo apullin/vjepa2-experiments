@@ -158,8 +158,6 @@ def setup():
 def main():
 
     x_hf, x_pt = setup()
-    print(x_hf.shape)
-    print(x_pt.shape)
 
     #### Benchmark models ####
     lat_hf,  mem_hf  = bench_hf(x_hf, N_RUNS)
