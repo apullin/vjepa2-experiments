@@ -11,7 +11,7 @@ from src.models.vision_transformer import vit_giant_xformers_rope
 HF_MODEL_NAME = "facebook/vjepa2-vitg-fpc64-384"
 PT_WEIGHTS    = "/home/ubuntu/vitg-384.pt"          # <-- edit path
 SAMPLE_MP4    = "sample_video.mp4"
-N_RUNS        = 10
+N_RUNS        = 30
 
 # ---------------------------------------------------------------- helpers
 def download_clip():
@@ -97,6 +97,35 @@ def bench_pt_eager(x_pt, n):
     del model; torch.cuda.empty_cache()
     return lat, mem
 
+def bench_pt_prec(x_pt, n, prec="fp32"):
+    """
+    prec ∈ {"fp32", "fp16", "bf16"}.
+      • fp16  → half-precision (CUDA only)
+      • bf16  → bfloat16   (Ampere/Hopper GPUs, ROCm 5.7+)
+      • fp32  → baseline
+    """
+    assert prec in {"fp32", "fp16", "bf16"}
+    _, _, T, H, W = x_pt.shape
+
+    # build & load on CPU first
+    model = vit_giant_xformers_rope(img_size=(H, W), num_frames=T).eval()
+    sd = torch.load(PT_WEIGHTS, map_location="cpu", weights_only=True)["encoder"]
+    model.load_state_dict({k.replace("module.","").replace("backbone.",""): v
+                           for k, v in sd.items()}, strict=False)
+
+    # cast + move
+    dtype_map = {"fp32": torch.float32,
+                 "fp16": torch.float16,
+                 "bf16": torch.bfloat16}
+    dtype = dtype_map[prec]
+
+    model = model.to(dtype=dtype, device="cuda")
+    x_cast = x_pt.to(dtype=dtype, device="cuda")
+
+    lat, mem = run_timed(model, x_cast, n, f"PT-{prec} ")
+    del model; torch.cuda.empty_cache()
+    return lat, mem
+
 def bench_pt_compiled(x_pt, n):
     """
     Build + torch.compile the Vision Transformer, then benchmark.
@@ -164,6 +193,9 @@ def main():
     lat_pt,  mem_pt  = bench_pt_eager(x_pt, N_RUNS)
     lat_ptc, mem_ptc = bench_pt_compiled(x_pt, N_RUNS)
 
+    lat_fp16, mem_fp16 = bench_pt_prec(x_pt, N_RUNS, prec="fp16")
+    lat_bf16, mem_bf16 = bench_pt_prec(x_pt, N_RUNS, prec="bf16")
+
     ## Print results
     def stats(name, lats, peak):
         ms = np.array(lats) * 1e3
@@ -175,6 +207,8 @@ def main():
     stats("HF hub",              lat_hf,  mem_hf)
     stats("local PT (eager)",    lat_pt,  mem_pt)
     stats("local PT (compiled)", lat_ptc, mem_ptc)
+    stats("local PT (fp16)", lat_fp16, mem_fp16)
+    stats("local PT (bf16)", lat_bf16, mem_bf16)
 
 
 if __name__ == "__main__":

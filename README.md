@@ -29,6 +29,8 @@ python -m vjepa2_benchmark
 
 Machines are as-delivered by Lambda Labs for on-demand instances.
 
+TODO: turn these all into a big table.
+
 #### GH200 ("gpu_1x_gh200"), CUDA 12.8
 
 ```
@@ -37,6 +39,14 @@ Machines are as-delivered by Lambda Labs for on-demand instances.
       local PT (eager):  2633.5 ±  49.2 ms  (min 2515.4, max 2689.2)  peak mem   5441.1 MB
    local PT (compiled):  2476.8 ±  44.0 ms  (min 2407.7, max 2523.3)  peak mem   4147.1 MB
 ```
+
+With reduction to FP16/BF16:
+```
+=== V-JEPA2 encoder, N = 30 synthetic runs ===
+       local PT (fp16):   402.4 ±   1.4 ms  (min  400.4, max  405.8)  peak mem   2712.5 MB
+       local PT (bf16):   398.1 ±   1.1 ms  (min  396.2, max  400.4)  peak mem   2711.3 MB
+```
+(not affected by `torch.set_float32_matmul_precision("high")`)
 
 #### A100 40GB SXM4 ("gpu_1x_a100_sxm4"), CUDA 12.8
 
