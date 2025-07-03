@@ -33,11 +33,20 @@ TODO: turn these all into a big table.
 
 #### GH200 ("gpu_1x_gh200"), CUDA 12.8
 
+with `torch.set_float32_matmul_precision("high")`:
 ```
 === V-JEPA2 encoder, N = 10 synthetic runs ===
                 HF hub:  3766.5 ±  85.9 ms  (min 3638.0, max 3861.7)  peak mem   5533.1 MB
       local PT (eager):  2633.5 ±  49.2 ms  (min 2515.4, max 2689.2)  peak mem   5441.1 MB
    local PT (compiled):  2476.8 ±  44.0 ms  (min 2407.7, max 2523.3)  peak mem   4147.1 MB
+```
+
+without `torch.set_float32_matmul_precision("high")`:
+```
+=== V-JEPA2 encoder, N = 10 synthetic runs ===
+                HF hub:  4321.9 ±   8.6 ms  (min 4310.1, max 4332.4)  peak mem   5533.1 MB
+      local PT (eager):  3077.8 ±   2.5 ms  (min 3074.2, max 3082.2)  peak mem   5441.1 MB
+   local PT (compiled):  3015.7 ±   4.6 ms  (min 3007.4, max 3019.6)  peak mem   4147.1 MB
 ```
 
 With reduction to FP16/BF16:
