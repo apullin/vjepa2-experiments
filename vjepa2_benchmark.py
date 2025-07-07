@@ -2,18 +2,17 @@
 # vjepa2_benchmark.py
 import os, subprocess, time, numpy as np, torch
 from decord import VideoReader
-from transformers import AutoModel, AutoVideoProcessor
+from transformers import AutoModel, AutoVideoProcessor, AutoVideoProcessor, AutoModel
 
 import src.datasets.utils.video.transforms as video_transforms
 import src.datasets.utils.video.volume_transforms as volume_transforms
 from src.models.vision_transformer import vit_giant_xformers_rope
 
 HF_MODEL_NAME = "facebook/vjepa2-vitg-fpc64-384"
-PT_WEIGHTS    = "/home/ubuntu/vitg-384.pt"          # <-- edit path
+PT_WEIGHTS    = "/home/ubuntu/vitg-384.pt"
 SAMPLE_MP4    = "sample_video.mp4"
-N_RUNS        = 30
+N_RUNS        = 10
 
-# ---------------------------------------------------------------- helpers
 def download_clip():
     if not os.path.exists(SAMPLE_MP4):
         url = ("https://huggingface.co/datasets/nateraw/kinetics-mini/resolve/main/"
@@ -22,14 +21,14 @@ def download_clip():
     else:
         print("Already have sample video")
 
-# def get_video_shape():
-#     vr = VideoReader(SAMPLE_MP4)
-#     batch = vr.get_batch(np.arange(0, 128, 2))     # same as demo
-#     return batch.shape                              # (T,H,W,C)
+def get_video() -> np.ndarray :
+    vr = VideoReader("sample_video.mp4")
+    # choosing some frames here, you can define more complex sampling strategy
+    frame_idx = np.arange(0, 128, 2)
+    video = vr.get_batch(frame_idx).asnumpy()
+    return video
 
-# def random_video(shape):
-#     return np.random.randint(0, 256, size=shape, dtype=np.uint8)
-
+# Taken from vjepa2_demo.py
 def build_pt_video_transform(img_size):
     IMAGENET_DEFAULT_MEAN = (0.485, 0.456, 0.406)
     IMAGENET_DEFAULT_STD = (0.229, 0.224, 0.225)
@@ -73,31 +72,66 @@ def run_timed(forward, x, n=3, label=""):
 
 ## Do benchmarking in separate functions, so the peak CUDA memory should not overlap ##
 
-def bench_hf(x_hf, n):
-    print("\n[HF hub] building model …")
-    model = AutoModel.from_pretrained(HF_MODEL_NAME).cuda().eval()
-    lat, mem = run_timed(lambda y: model.get_vision_features(y), x_hf, n, "HF ")
-    del model; torch.cuda.empty_cache()
+def bench_hf(repo_name, n):
+    print(f"[HF hub] building model for {repo_name}…")
+
+    # Build HuggingFace preprocessing transform
+    hf_transform = AutoVideoProcessor.from_pretrained(repo_name)
+    img_size = hf_transform.crop_size["height"]  # E.g. 384, 256, etc.
+
+    # Create inputs with HF transform
+    video = get_video()
+    inputs = hf_transform(video, return_tensors="pt")
+    x_hf = inputs["pixel_values_videos"] # input, as a tensor
+    assert type(x_hf) is torch.Tensor
+
+    model = AutoModel.from_pretrained(repo_name).eval().cuda()
+    # The HF model ships the encoder AND predictor, but we ONLY want the encoder.
+    encoder = model.encoder
+
+    lat, mem = run_timed(lambda y: encoder.forward(y), x_hf, n, f"HF {repo_name}, ")
+    del model; torch.cuda.empty_cache() # cleanup
     return lat, mem
 
-def bench_pt_eager(x_pt, n):
+def pt_prepare_video():
+    # Sample video
+    vr        = VideoReader(SAMPLE_MP4)
+    frame_idx = np.arange(0, 128, 2)                       # 64 frames, strided by 2
+    np_vid    = vr.get_batch(frame_idx).asnumpy()          # (T,H,W,C) uint8
+
+    # PyTorch preprocessing
+    img_size = 384 # hardcoded for now
+    pt_transform = build_pt_video_transform(img_size=img_size)
+    x_pt = pt_transform(
+        torch.from_numpy(np_vid).permute(0, 3, 1, 2)       # to (T,C,H,W)
+    ).unsqueeze(0)                                         # → (1,C,T,H,W)
+    return x_pt
+
+def bench_pt_eager(n):
     """
     Build the Vision Transformer, load weights, time it in eager mode.
-    x_pt: (1, C, T, H, W) CUDA *or* CPU tensor — we’ll move it to CUDA inside run_timed.
     """
-    print("\n[local PT eager] building model …")
+    x_pt = pt_prepare_video()
     _, _, T, H, W = x_pt.shape          # derive from the sample tensor
+
+    print("\n[local PT eager] building model …")
     model = vit_giant_xformers_rope(
         img_size=(H, W),                # square crop so H == W
         num_frames=T
     ).cuda().eval()
+
+    # Load the state dict then population the model with weights
+    # TODO we actually don't need to do this for just benchmarking ...
     sd = torch.load(PT_WEIGHTS, weights_only=True, map_location="cpu")["encoder"]
+    # Then populate the model
     model.load_state_dict({k.replace("module.","").replace("backbone.",""): v for k,v in sd.items()}, strict=False)
-    lat, mem = run_timed(model, x_pt, n, "PT-eager ")
+    del sd # cleanup, for low-RAM machines ...
+
+    lat, mem = run_timed(model, x_pt, n, "PT-eager ") # Timed inference
     del model; torch.cuda.empty_cache()
     return lat, mem
 
-def bench_pt_prec(x_pt, n, prec="fp32"):
+def bench_pt_prec(n, prec="fp32"):
     """
     prec ∈ {"fp32", "fp16", "bf16"}.
       • fp16  → half-precision (CUDA only)
@@ -105,13 +139,22 @@ def bench_pt_prec(x_pt, n, prec="fp32"):
       • fp32  → baseline
     """
     assert prec in {"fp32", "fp16", "bf16"}
-    _, _, T, H, W = x_pt.shape
+
+    x_pt = pt_prepare_video()
+    _, _, T, H, W = x_pt.shape          # derive from the sample tensor
 
     # build & load on CPU first
-    model = vit_giant_xformers_rope(img_size=(H, W), num_frames=T).eval()
-    sd = torch.load(PT_WEIGHTS, map_location="cpu", weights_only=True)["encoder"]
-    model.load_state_dict({k.replace("module.","").replace("backbone.",""): v
-                           for k, v in sd.items()}, strict=False)
+    model = vit_giant_xformers_rope(
+        img_size=(H, W),                # square crop so H == W
+        num_frames=T
+    ).cuda().eval()
+
+    # Load the state dict then population the model with weights
+    # TODO we actually don't need to do this for just benchmarking ...
+    sd = torch.load(PT_WEIGHTS, weights_only=True, map_location="cpu")["encoder"]
+    # Then populate the model
+    model.load_state_dict({k.replace("module.","").replace("backbone.",""): v for k,v in sd.items()}, strict=False)
+    del sd # cleanup, for low-RAM machines ...
 
     # cast + move
     dtype_map = {"fp32": torch.float32,
@@ -121,29 +164,31 @@ def bench_pt_prec(x_pt, n, prec="fp32"):
 
     model = model.to(dtype=dtype, device="cuda")
     x_cast = x_pt.to(dtype=dtype, device="cuda")
+    del x_pt; torch.cuda.empty_cache()
 
     lat, mem = run_timed(model, x_cast, n, f"PT-{prec} ")
     del model; torch.cuda.empty_cache()
     return lat, mem
 
-def bench_pt_compiled(x_pt, n):
+def bench_pt_compiled(n):
     """
     Build + torch.compile the Vision Transformer, then benchmark.
-    Shape of x_pt is (1, C, T, H, W) – we infer H (==W) and T from that.
     """
-    print("\n[local PT compiled] building + compiling …")
+    x_pt = pt_prepare_video()
+    _, _, T, H, W = x_pt.shape          # derive from the sample tensor
 
-    _, _, T, H, W = x_pt.shape                       # infer from sample tensor
+    print("\n[local PT compiled] building + compiling …")
     model = vit_giant_xformers_rope(
         img_size=(H, W),
         num_frames=T
     ).cuda().eval()
 
-    sd = torch.load(PT_WEIGHTS, map_location="cpu", weights_only=True)["encoder"]
-    model.load_state_dict(
-        {k.replace("module.","").replace("backbone.",""): v for k, v in sd.items()},
-        strict=False
-    )
+    # Load the state dict then population the model with weights
+    # TODO we actually don't need to do this for just benchmarking ...
+    sd = torch.load(PT_WEIGHTS, weights_only=True, map_location="cpu")["encoder"]
+    # Then populate the model
+    model.load_state_dict({k.replace("module.","").replace("backbone.",""): v for k,v in sd.items()}, strict=False)
+    del sd # cleanup, for low-RAM machines ...
 
     model_c = torch.compile(
         model,
@@ -151,50 +196,31 @@ def bench_pt_compiled(x_pt, n):
         dynamic=False,
         mode="reduce-overhead"
     )
+    # warm-up / trigger compile
+    print("Compiling model ... ", end="")
+    tic = time.perf_counter()
     with torch.no_grad():
-        _ = model_c(x_pt.cuda())          # warm-up / trigger compile
+        _ = model_c(x_pt.cuda())
         torch.cuda.synchronize()
+    toc = time.perf_counter()
+    print(f"took {int((toc-tic) * 1e3)} ms")
 
     lat, mem = run_timed(model_c, x_pt, n, label="PT-comp ")
     del model_c, model
     torch.cuda.empty_cache()
     return lat, mem
 
-def setup():
-    download_clip()
-    # Sample video
-    vr        = VideoReader(SAMPLE_MP4)
-    frame_idx = np.arange(0, 128, 2)                       # 64 frames
-    np_vid    = vr.get_batch(frame_idx).asnumpy()          # (T,H,W,C) uint8
-    T, H, W, C = np_vid.shape
-    print("raw video shape:", (T, H, W, C))                # (64,270,480,3)
-
-    ## Model input shapes are a little different, so prepare both
-    # HF preprocessing
-    proc_hf   = AutoVideoProcessor.from_pretrained(HF_MODEL_NAME)
-    img_size  = proc_hf.crop_size["height"]                # e.g. 384
-    x_hf      = proc_hf(np_vid, return_tensors="pt")["pixel_values_videos"]
-
-    # PyTorch preprocessing
-    pt_transform = build_pt_video_transform(img_size=img_size)
-    x_pt = pt_transform(
-        torch.from_numpy(np_vid).permute(0, 3, 1, 2)       # to (T,C,H,W)
-    ).unsqueeze(0)                                         # → (1,C,T,H,W)
-
-    return x_hf, x_pt
-
-# ---------------------------------------------------------------- main
 def main():
 
-    x_hf, x_pt = setup()
+    download_clip()
 
     #### Benchmark models ####
-    lat_hf,  mem_hf  = bench_hf(x_hf, N_RUNS)
-    lat_pt,  mem_pt  = bench_pt_eager(x_pt, N_RUNS)
-    lat_ptc, mem_ptc = bench_pt_compiled(x_pt, N_RUNS)
+    lat_hf,  mem_hf  = bench_hf(HF_MODEL_NAME, N_RUNS)
+    lat_pt,  mem_pt  = bench_pt_eager(N_RUNS)
+    lat_ptc, mem_ptc = bench_pt_compiled(N_RUNS)
 
-    lat_fp16, mem_fp16 = bench_pt_prec(x_pt, N_RUNS, prec="fp16")
-    lat_bf16, mem_bf16 = bench_pt_prec(x_pt, N_RUNS, prec="bf16")
+    lat_fp16, mem_fp16 = bench_pt_prec(N_RUNS, prec="fp16")
+    lat_bf16, mem_bf16 = bench_pt_prec(N_RUNS, prec="bf16")
 
     ## Print results
     def stats(name, lats, peak):
@@ -212,5 +238,5 @@ def main():
 
 
 if __name__ == "__main__":
-    torch.set_float32_matmul_precision("high")   # optional TF32 speed path
+    # torch.set_float32_matmul_precision("high")   # optional TF32 speed path
     main()

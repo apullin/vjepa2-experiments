@@ -27,57 +27,42 @@ python -m vjepa2_benchmark
 ```
 ### Results
 
-Machines are as-delivered by Lambda Labs for on-demand instances.
+My first results here were wrong! The Huggingface model also packages the predictor, so we have to pick out ONLY the encoder and run that.
+
+Rented big iron is as-delivered by Lambda Labs for on-demand instances.
+
+TODO: separealy benchmark the predictor (is that block important? e.g. if I wanted to do RL/MPC)
 
 TODO: turn these all into a big table.
+
+
 
 #### GH200 ("gpu_1x_gh200"), CUDA 12.8
 
 with `torch.set_float32_matmul_precision("high")`:
 ```
 === V-JEPA2 encoder, N = 10 synthetic runs ===
-                HF hub:  3766.5 ±  85.9 ms  (min 3638.0, max 3861.7)  peak mem   5533.1 MB
-      local PT (eager):  2633.5 ±  49.2 ms  (min 2515.4, max 2689.2)  peak mem   5441.1 MB
-   local PT (compiled):  2476.8 ±  44.0 ms  (min 2407.7, max 2523.3)  peak mem   4147.1 MB
+                HF hub:  2413.2 ±   2.1 ms  (min 2409.2, max 2415.6)  peak mem   5533.1 MB
+      local PT (eager):  2437.3 ±   1.8 ms  (min 2433.4, max 2439.5)  peak mem   5441.1 MB
+   local PT (compiled):  2393.8 ±   1.6 ms  (min 2391.3, max 2396.5)  peak mem   4147.1 MB
 ```
 
 without `torch.set_float32_matmul_precision("high")`:
 ```
 === V-JEPA2 encoder, N = 10 synthetic runs ===
-                HF hub:  4321.9 ±   8.6 ms  (min 4310.1, max 4332.4)  peak mem   5533.1 MB
-      local PT (eager):  3077.8 ±   2.5 ms  (min 3074.2, max 3082.2)  peak mem   5441.1 MB
-   local PT (compiled):  3015.7 ±   4.6 ms  (min 3007.4, max 3019.6)  peak mem   4147.1 MB
+                HF hub:  3039.0 ±   2.0 ms  (min 3035.6, max 3042.3)  peak mem   5533.1 MB
+      local PT (eager):  3071.8 ±   1.3 ms  (min 3070.1, max 3074.0)  peak mem   5441.1 MB
+   local PT (compiled):  3006.5 ±   2.1 ms  (min 3001.4, max 3008.8)  peak mem   4147.1 MB
 ```
 
 With reduction to FP16/BF16:
 ```
 === V-JEPA2 encoder, N = 30 synthetic runs ===
-       local PT (fp16):   402.4 ±   1.4 ms  (min  400.4, max  405.8)  peak mem   2712.5 MB
-       local PT (bf16):   398.1 ±   1.1 ms  (min  396.2, max  400.4)  peak mem   2711.3 MB
+       local PT (fp16):   401.7 ±   1.4 ms  (min  399.9, max  405.2)  peak mem   2710.4 MB
+       local PT (bf16):   398.9 ±   1.0 ms  (min  396.2, max  400.7)  peak mem   2708.5 MB
+
 ```
 (not affected by `torch.set_float32_matmul_precision("high")`)
-
-#### A100 40GB SXM4 ("gpu_1x_a100_sxm4"), CUDA 12.8
-
-with `torch.set_float32_matmul_precision("high")`:
-
-```
-=== V-JEPA2 encoder, N = 10 synthetic runs ===
-                HF hub:  5874.2 ±  18.4 ms  (min 5834.8, max 5895.8)  peak mem   5511.1 MB
-      local PT (eager):  3989.7 ±   7.8 ms  (min 3976.1, max 3999.5)  peak mem   5420.1 MB
-   local PT (compiled):  3876.4 ±  13.2 ms  (min 3845.8, max 3891.6)  peak mem   4457.3 MB
-```
-
-without `torch.set_float32_matmul_precision("high")`:
-```
-=== V-JEPA2 encoder, N = 10 synthetic runs ===
-                HF hub:  7642.0 ±  21.9 ms  (min 7596.2, max 7670.3)  peak mem   5511.1 MB
-      local PT (eager):  5674.2 ±  11.5 ms  (min 5657.5, max 5690.9)  peak mem   5420.1 MB
-   local PT (compiled):  5556.2 ±  13.1 ms  (min 5533.2, max 5577.0)  peak mem   4457.3 MB
-```
-
-There is a noticeable difference between the HF and PT models.
-The HF model must be including some other transforms that we are not accounting for. TODO have to make sure this is a fair comparison.
 
 
 ## TODOs
