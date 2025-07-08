@@ -39,6 +39,22 @@ TODO: turn these all into a big table.
 
 #### GH200 ("gpu_1x_gh200"), CUDA 12.8
 
+All the models from HuggingFace (huge range in performance!):
+
+`=== V-JEPA2 encoder, N = 10 synthetic runs ===`
+| Model Name                                 | Mean ± Std (ms)|  Peak Mem (MB) |
+|-------------------------------------------|-----------------|----------------|
+| facebook/vjepa2-vitl-fpc64-256            | 232.5 ± 0.5     |  1741.2        |
+| facebook/vjepa2-vith-fpc64-256            | 413.9 ± 0.5     |  3158.9        |
+| facebook/vjepa2-vitg-fpc64-256            | 543.0 ± 0.4     |  4749.3        |
+| facebook/vjepa2-vitg-fpc64-384            | 2421.1 ± 1.4    |  5568.3        |
+| facebook/vjepa2-vitg-fpc64-384-ssv2       | 2424.3 ± 2.2    |  5568.3        |
+| facebook/vjepa2-vitl-fpc16-256-ssv2       | 234.4 ± 0.7     |  1742.0        |
+| facebook/vjepa2-vitg-fpc32-384-diving48   | 2424.8 ± 1.6    |  5570.0        |
+| facebook/vjepa2-vitl-fpc32-256-diving48   | 234.8 ± 0.4     |  1740.2        |
+
+#### Comparing with the locally-loaded PT model:
+
 with `torch.set_float32_matmul_precision("high")`:
 ```
 === V-JEPA2 encoder, N = 10 synthetic runs ===
@@ -55,7 +71,7 @@ without `torch.set_float32_matmul_precision("high")`:
    local PT (compiled):  3006.5 ±   2.1 ms  (min 3001.4, max 3008.8)  peak mem   4147.1 MB
 ```
 
-With reduction to FP16/BF16:
+#### With reduction to FP16/BF16:
 ```
 === V-JEPA2 encoder, N = 30 synthetic runs ===
        local PT (fp16):   401.7 ±   1.4 ms  (min  399.9, max  405.2)  peak mem   2710.4 MB
@@ -65,22 +81,11 @@ With reduction to FP16/BF16:
 (not affected by `torch.set_float32_matmul_precision("high")`)
 
 
-All the models from HuggingFace (huge range in performance!):
-```
-=== V-JEPA2 encoder, N = 10 synthetic runs ===
-HF facebook/vjepa2-vitl-fpc64-256:           232.5 ±   0.5 ms  (min  231.0, max  233.0)  peak mem   1741.2 MB
-HF facebook/vjepa2-vith-fpc64-256:           413.9 ±   0.5 ms  (min  413.3, max  414.9)  peak mem   3158.9 MB
-HF facebook/vjepa2-vitg-fpc64-256:           543.0 ±   0.4 ms  (min  542.2, max  543.6)  peak mem   4749.3 MB
-HF facebook/vjepa2-vitg-fpc64-384:          2421.1 ±   1.4 ms  (min 2418.6, max 2423.4)  peak mem   5568.3 MB
-HF facebook/vjepa2-vitg-fpc64-384-ssv2:     2424.3 ±   2.2 ms  (min 2420.4, max 2428.4)  peak mem   5568.3 MB
-HF facebook/vjepa2-vitl-fpc16-256-ssv2:      234.4 ±   0.7 ms  (min  233.2, max  235.7)  peak mem   1742.0 MB
-HF facebook/vjepa2-vitg-fpc32-384-diving48: 2424.8 ±   1.6 ms  (min 2422.3, max 2427.1)  peak mem   5570.0 MB
-HF facebook/vjepa2-vitl-fpc32-256-diving48:  234.8 ±   0.4 ms  (min  234.0, max  235.2)  peak mem   1740.2 MB
-```
-
 ## TODOs
 
 Too many to list.
 - Benchmark other published encoder sizes (weights & vid sizes)
 - Benchmark classifier portion
+- Can a HF model easily be run in fp16?
+- Can I re-export an uncalibrated fp16 or i8 version of the big models?
 - Change CUDA to a generic `device`, try on MPS
