@@ -67,6 +67,7 @@ With reduction to FP16/BF16:
 
 All the models from HuggingFace (huge range in performance!):
 ```
+=== V-JEPA2 encoder, N = 10 synthetic runs ===
 HF facebook/vjepa2-vitl-fpc64-256:           232.5 ±   0.5 ms  (min  231.0, max  233.0)  peak mem   1741.2 MB
 HF facebook/vjepa2-vith-fpc64-256:           413.9 ±   0.5 ms  (min  413.3, max  414.9)  peak mem   3158.9 MB
 HF facebook/vjepa2-vitg-fpc64-256:           543.0 ±   0.4 ms  (min  542.2, max  543.6)  peak mem   4749.3 MB
