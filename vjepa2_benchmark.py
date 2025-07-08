@@ -8,10 +8,22 @@ import src.datasets.utils.video.transforms as video_transforms
 import src.datasets.utils.video.volume_transforms as volume_transforms
 from src.models.vision_transformer import vit_giant_xformers_rope
 
+# This is the matched pair from vjepa2_demo.py
 HF_MODEL_NAME = "facebook/vjepa2-vitg-fpc64-384"
 PT_WEIGHTS    = "/home/ubuntu/vitg-384.pt"
 SAMPLE_MP4    = "sample_video.mp4"
 N_RUNS        = 10
+
+repo_names = [
+    "facebook/vjepa2-vitl-fpc64-256",
+    "facebook/vjepa2-vith-fpc64-256",
+    "facebook/vjepa2-vitg-fpc64-256",
+    "facebook/vjepa2-vitg-fpc64-384",
+    "facebook/vjepa2-vitg-fpc64-384-ssv2",
+    "facebook/vjepa2-vitl-fpc16-256-ssv2",
+    "facebook/vjepa2-vitg-fpc32-384-diving48",
+    "facebook/vjepa2-vitl-fpc32-256-diving48",
+]
 
 def download_clip():
     if not os.path.exists(SAMPLE_MP4):
@@ -215,7 +227,12 @@ def main():
     download_clip()
 
     #### Benchmark models ####
-    lat_hf,  mem_hf  = bench_hf(HF_MODEL_NAME, N_RUNS)
+    # Run all HF models
+    results = {}
+    for HF_MODEL_NAME in repo_names:
+        lat_hf, mem_hf = bench_hf(HF_MODEL_NAME, N_RUNS)
+        results[HF_MODEL_NAME] = (lat_hf, mem_hf)
+
     lat_pt,  mem_pt  = bench_pt_eager(N_RUNS)
     lat_ptc, mem_ptc = bench_pt_compiled(N_RUNS)
 
@@ -230,7 +247,8 @@ def main():
               f"peak mem {peak:8.1f} MB")
 
     print(f"\n=== V-JEPA2 encoder, N = {N_RUNS} synthetic runs ===")
-    stats("HF hub",              lat_hf,  mem_hf)
+    for model_name, (lat_hf, mem_hf) in results.items():
+        stats(f"HF {model_name}", lat_hf, mem_hf)
     stats("local PT (eager)",    lat_pt,  mem_pt)
     stats("local PT (compiled)", lat_ptc, mem_ptc)
     stats("local PT (fp16)", lat_fp16, mem_fp16)
@@ -238,5 +256,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # torch.set_float32_matmul_precision("high")   # optional TF32 speed path
+    torch.set_float32_matmul_precision("high")   # optional TF32 speed path
     main()

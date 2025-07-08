@@ -65,6 +65,18 @@ With reduction to FP16/BF16:
 (not affected by `torch.set_float32_matmul_precision("high")`)
 
 
+All the models from HuggingFace (huge range in performance!):
+```
+HF facebook/vjepa2-vitl-fpc64-256:           232.5 ±   0.5 ms  (min  231.0, max  233.0)  peak mem   1741.2 MB
+HF facebook/vjepa2-vith-fpc64-256:           413.9 ±   0.5 ms  (min  413.3, max  414.9)  peak mem   3158.9 MB
+HF facebook/vjepa2-vitg-fpc64-256:           543.0 ±   0.4 ms  (min  542.2, max  543.6)  peak mem   4749.3 MB
+HF facebook/vjepa2-vitg-fpc64-384:          2421.1 ±   1.4 ms  (min 2418.6, max 2423.4)  peak mem   5568.3 MB
+HF facebook/vjepa2-vitg-fpc64-384-ssv2:     2424.3 ±   2.2 ms  (min 2420.4, max 2428.4)  peak mem   5568.3 MB
+HF facebook/vjepa2-vitl-fpc16-256-ssv2:      234.4 ±   0.7 ms  (min  233.2, max  235.7)  peak mem   1742.0 MB
+HF facebook/vjepa2-vitg-fpc32-384-diving48: 2424.8 ±   1.6 ms  (min 2422.3, max 2427.1)  peak mem   5570.0 MB
+HF facebook/vjepa2-vitl-fpc32-256-diving48:  234.8 ±   0.4 ms  (min  234.0, max  235.2)  peak mem   1740.2 MB
+```
+
 ## TODOs
 
 Too many to list.
