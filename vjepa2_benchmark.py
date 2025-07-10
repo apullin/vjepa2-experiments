@@ -58,12 +58,12 @@ def build_pt_video_transform(img_size):
     return eval_transform
 
 @torch.no_grad()
-def run_timed(forward, x, n=3, label=""):
+def run_timed(model, x, n=3, label=""):
     x = x.cuda()
     torch.cuda.synchronize()
 
     # always do one warmup run:
-    _ = forward(x)
+    _ = model(x)
     torch.cuda.synchronize()
 
     latencies = []
@@ -71,7 +71,7 @@ def run_timed(forward, x, n=3, label=""):
     for i in range(n):
         print(f"{label}{i+1}/{n}  ", end="")
         tic = time.perf_counter()
-        _ = forward(x)
+        _ = model(x)
         torch.cuda.synchronize()
         toc = time.perf_counter()
         latency = toc - tic
@@ -84,7 +84,7 @@ def run_timed(forward, x, n=3, label=""):
 
 ## Do benchmarking in separate functions, so the peak CUDA memory should not overlap ##
 
-def bench_hf(repo_name, n):
+def bench_hf(repo_name, n, dtype=torch.float32):
     print(f"[HF hub] building model for {repo_name}…")
 
     # Build HuggingFace preprocessing transform
@@ -97,11 +97,11 @@ def bench_hf(repo_name, n):
     x_hf = inputs["pixel_values_videos"] # input, as a tensor
     assert type(x_hf) is torch.Tensor
 
-    model = AutoModel.from_pretrained(repo_name).eval().cuda()
+    model = AutoModel.from_pretrained(repo_name, torch_dtype=dtype, device_map="cuda").eval()
     # The HF model ships the encoder AND predictor, but we ONLY want the encoder.
     encoder = model.encoder
 
-    lat, mem = run_timed(lambda y: encoder.forward(y), x_hf, n, f"HF {repo_name}, ")
+    lat, mem = run_timed(encoder, x_hf, n, f"HF {repo_name}, ")
     del model; torch.cuda.empty_cache() # cleanup
     return lat, mem
 
@@ -230,7 +230,7 @@ def main():
     # Run all HF models
     results = {}
     for HF_MODEL_NAME in repo_names:
-        lat_hf, mem_hf = bench_hf(HF_MODEL_NAME, N_RUNS)
+        lat_hf, mem_hf = bench_hf(HF_MODEL_NAME, N_RUNS, dtype=torch.float32)
         results[HF_MODEL_NAME] = (lat_hf, mem_hf)
 
     lat_pt,  mem_pt  = bench_pt_eager(N_RUNS)

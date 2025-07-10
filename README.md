@@ -35,7 +35,48 @@ TODO: separealy benchmark the predictor (is that block important? e.g. if I want
 
 TODO: turn these all into a big table.
 
+#### Jetson Orion Nano 8GB
 
+Hugginface Models, in `torch.fp32`:
+
+`=== V-JEPA2 encoder, N = 10 synthetic runs ===`
+| Model Name                               | Mean ± Std (ms) | Peak Mem (MB) |
+|------------------------------------------|-----------------|---------------|
+| facebook/vjepa2-vitl-fpc64-256           | 7112.0 ± 2.4    | 1715.6        |
+| facebook/vjepa2-vith-fpc64-256           | 14343.4 ± 2.5   | 3102.0        |
+| facebook/vjepa2-vitg-fpc64-256           | 48777.3 ± 23404.4 | 4649.7      |
+| facebook/vjepa2-vitl-fpc16-256-ssv2      | 14643.3 ± 15468.4 | 1717.5      |
+| facebook/vjepa2-vitl-fpc32-256-diving48  | 7299.4 ± 263.7  | 1717.5        |
+
+Notes:
+- Won't load in fp32:
+    - `facebook/vjepa2-vitg-fpc64-384`
+    - `facebook/vjepa2-vitg-fpc64-384-ssv2`
+    - `facebook/vjepa2-vitg-fpc32-384-diving48`
+
+Huggingface Models, in `torch.fp16`:
+
+`=== V-JEPA2 encoder, N = 10 synthetic runs ===`
+| Model Name                               | Mean ± Std (ms) | Peak Mem (MB) |
+|------------------------------------------|-----------------|---------------|
+| facebook/vjepa2-vitl-fpc64-256           | 1661.1 ± 9.6    | 885.9         |
+| facebook/vjepa2-vith-fpc64-256           | 3233.0 ± 3.1    | 1569.6        |
+| facebook/vjepa2-vitg-fpc64-256           | 4357.9 ± 3.4    | 2341.4        |
+| facebook/vjepa2-vitg-fpc64-384           | 14228.7 ± 10.3  | 2780.9        |
+| facebook/vjepa2-vitl-fpc16-256-ssv2      | 1687.4 ± 2.3    | 887.8         |
+| facebook/vjepa2-vitg-fpc32-384-diving48  | 14252.6 ± 11.7  | 2780.9        |
+| facebook/vjepa2-vitl-fpc32-256-diving48  | 1692.9 ± 1.9    | 887.8         |
+
+Interesting results. The source video is 10 seconds long, so in fp16 all models except `vitg-fpc64-384` run faster than realtime.
+
+Notably:
+- the `device_map="auto"` is doing heavily lifting here - unclear what is going to CPU, what to GPU
+- some models have identical results - maybe the encoders are the same between those?
+- `facebook/vjepa2-vitg-fpc64-384-ssv2` will not even load, due to OOM panic
+- above benchmarks are made using the **default** Jetson config with ~3.7GB of zram/compressed swap
+- high variation for `vitg-fpc64-256` in fp32, only config that shows this behavior - thermal? swapping?
+- TODO: redo measurements w/ no zram and swap on ssd
+- TODO: redo in bf16 (is it even supported?)
 
 #### GH200 ("gpu_1x_gh200"), CUDA 12.8
 
@@ -86,6 +127,5 @@ without `torch.set_float32_matmul_precision("high")`:
 Too many to list.
 - Benchmark other published encoder sizes (weights & vid sizes)
 - Benchmark classifier portion
-- Can a HF model easily be run in fp16?
-- Can I re-export an uncalibrated fp16 or i8 version of the big models?
+- How to test i8? (quick test w/ `bitsandbytes` seems to cause a fault on aarch64)
 - Change CUDA to a generic `device`, try on MPS
